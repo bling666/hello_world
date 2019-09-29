@@ -1,3 +1,5 @@
 try to practice git.
 
 try to practice branch.
+
+merge branch.
