@@ -3,6 +3,8 @@
 */
 
 
+
+
 /*
 struct sockaddr_in {
 short   sin_family;
@@ -13,44 +15,28 @@ char    sin_zero[8];
 */
 
 
+
+
 #include<vector>
 using namespace std;
 #include "sysInclude.h"
-
-
 extern void tcp_DiscardPkt(char *pBuffer, int type);
-
-
 extern void tcp_sendReport(int type);
-
-
 extern void tcp_sendIpPkt(unsigned char *pData, UINT16 len, unsigned int  srcAddr, unsigned int dstAddr, UINT8 ttl);
-
-
 extern int waitIpPacket(char *pBuffer, int timeout);
-
-
 extern unsigned int getIpv4Address();
-
-
 extern unsigned int getServerIpv4Address();
-
-
 #define CLOSED 0
 #define SYNSENT 1
 #define ESTABLISHED 2
 #define FINWAIT1 3
 #define FINWAIT2 4
 #define TIMEWAIT 5
-
-
 int gSrcPort = 2007;
 int gDstPort = 2006;
 int gSeqNum = 0;
 int gAckNum = 0;
 int global_socket = 0;
-
-
 struct TCB {
 	unsigned int src_addr;
 	unsigned int dst_addr;
@@ -70,19 +56,47 @@ struct tcp_header {
 	unsigned short window_size;
 	unsigned short checksum;
 	unsigned short urg_ptr;
+	void construct(TCB* tcb, int flag)
+	{
+		window_size = htons(1);
+		if (flag == PACKET_TYPE_SYN)
+		{
+			seq = htonl(1);
+			ack = htonl(0);
+		}
+		else
+		{
+			seq = htonl(tcb->seq);
+			ack = htonl(tcb->ack);
+		}
+		checksum = htons(0);
+		switch (flag) {
+		case PACKET_TYPE_DATA:length_and_type = htons(0x5000); break;
+		case PACKET_TYPE_SYN:length_and_type = htons(0x5002); break;
+		case PACKET_TYPE_SYN_ACK:length_and_type = htons(0x5012); break;
+		case PACKET_TYPE_ACK:length_and_type = htons(0x5010); break;
+		case PACKET_TYPE_FIN:length_and_type = htons(0x5001); break;
+		case PACKET_TYPE_FIN_ACK:length_and_type = htons(0x5011); break;
+		}
+
+	}
 };
+
+
 struct ip_fake_header
 {
 	unsigned int src_addr;
 	unsigned int dst_addr;
 	unsigned short protocol;
 	unsigned short len;
-
-
 };
 
 
+
+
 vector<TCB*> TCB_table;
+
+
 
 
 unsigned short checksum_compute(unsigned short* pBuff, int length, unsigned short* pFakeHeader) {
@@ -101,6 +115,8 @@ unsigned short checksum_compute(unsigned short* pBuff, int length, unsigned shor
 	}
 	return (unsigned short)sum;
 }
+
+
 
 
 int stud_tcp_input(char *pBuff, unsigned short len, unsigned int srcAddr,
@@ -127,17 +143,17 @@ int stud_tcp_input(char *pBuff, unsigned short len, unsigned int srcAddr,
 		return -1;
 	}
 
-
-	//检查校验和
-	/*ip_fake_header fkh;
+	ip_fake_header fkh;
 	fkh.src_addr = srcAddr;
 	fkh.dst_addr = dstAddr;
 	fkh.protocol = htons(6);
 	fkh.len = htons(len+20);
-	if(checksum_compute((unsigned short*)pBuff,len,(unsigned short*)&fkh)!=0)
+	if (checksum_compute((char*)pBuff, len, (char*)&fkh) != 0)
 	{
-	return -1;
-	}*/
+		return -1;
+	}
+
+
 
 
 	//检查序列号
@@ -146,6 +162,8 @@ int stud_tcp_input(char *pBuff, unsigned short len, unsigned int srcAddr,
 		tcp_DiscardPkt(pBuff, STUD_TCP_TEST_SEQNO_ERROR);
 		return -1;
 	}
+
+
 
 
 	//有限状态机对报文的处理
@@ -171,7 +189,7 @@ int stud_tcp_input(char *pBuff, unsigned short len, unsigned int srcAddr,
 		tcb->status = FINWAIT2;
 		return 0;
 	}
-	if (tcb->status == FINWAIT2 && &&if_ACK && if_FIN)
+	if (tcb->status == FINWAIT2 && if_ACK && if_FIN)
 	{
 		tcb->seq++;
 		tcb->ack++;
@@ -180,6 +198,8 @@ int stud_tcp_input(char *pBuff, unsigned short len, unsigned int srcAddr,
 		return 0;
 	}
 }
+
+
 
 
 void stud_tcp_output(char *pData, unsigned short len, unsigned char flag, unsigned short srcPort, unsigned short dstPort, unsigned int srcAddr, unsigned int dstAddr)
@@ -196,20 +216,12 @@ void stud_tcp_output(char *pData, unsigned short len, unsigned char flag, unsign
 				&& TCB_table[i]->src_port == srcPort && TCB_table[i]->dst_port == dstPort) {
 				find_tcb = 1;
 				tcb = TCB_table[i];
-
-
 			}
 		}
 	}
-
-
 	if (tcb == NULL) return;
 
 
-	tcp_header* header = new(tcp_header);
-	header->src_port = htons(srcPort);
-	header->dst_port = htons(dstPort);
-	header->window_size = htons(1);
 	ip_fake_header* fake_header = new(ip_fake_header);
 	fake_header->src_addr = htonl(srcAddr);
 	fake_header->dst_addr = htonl(dstAddr);
@@ -217,59 +229,30 @@ void stud_tcp_output(char *pData, unsigned short len, unsigned char flag, unsign
 	fake_header->len = htons(20 + len);
 
 
-	if (flag == PACKET_TYPE_SYN) {
-		header->seq = htonl(1);
-		header->ack = htonl(0);
-		header->checksum = htons(0);
-		header->length_and_type = htons(0x5002);
-		header->checksum = htons(~checksum_compute((unsigned short *)header, 10, (unsigned short *)fake_header));
-		tcp_sendIpPkt((unsigned char*)header, len + 20, srcAddr, dstAddr, 255);
+	tcp_header* header = new(tcp_header);
+	header->src_port = htons(srcPort);
+	header->dst_port = htons(dstPort);
+	header->construct(tcb, flag);
+	if (flag == PACKET_TYPE_DATA) {
+		memcpy((char *)header + 20, pData, len);
+	}
+	header->checksum = htons(~checksum_compute((unsigned short *)header, 10 + len / 2, (unsigned short *)fake_header));
 
+	tcp_sendIpPkt((unsigned char*)header, len + 20, srcAddr, dstAddr, 255);
 
-		tcb->dst_addr = dstAddr;
-		tcb->dst_port = dstPort;
+	if (flag == PACKET_TYPE_SYN)
+	{
 		tcb->src_addr = srcAddr;
+		tcb->dst_addr = dstAddr;
 		tcb->src_port = srcPort;
+		tcb->dst_port = dstPort;
 		tcb->seq = 1;
 		tcb->ack = 1;
 		tcb->status = SYNSENT;
 	}
-	if (flag == PACKET_TYPE_ACK) {
-		header->seq = htonl(tcb->seq);
-		header->ack = htonl(tcb->ack);
-		header->checksum = htons(0);
-		header->length_and_type = htons(0x5010);
-		header->checksum = htons(~checksum_compute((unsigned short *)header, 10, (unsigned short *)fake_header));
-		tcp_sendIpPkt((unsigned char*)header, len + 20, srcAddr, dstAddr, 255);
-	}
-	if (flag == PACKET_TYPE_FIN_ACK) {
-		header->seq = htonl(tcb->seq);
-		header->ack = htonl(tcb->ack);
-		header->checksum = htons(0);
-		header->length_and_type = htons(0x5011);
-		header->checksum = htons(~checksum_compute((unsigned short *)header, 10, (unsigned short *)fake_header));
-		tcp_sendIpPkt((unsigned char*)header, len + 20, srcAddr, dstAddr, 255);
-
-
-		if (tcb->status == ESTABLISHED)
-			tcb->status = FINWAIT1;
-	}
-	if (flag == PACKET_TYPE_DATA) {
-		header->seq = htonl(tcb->seq);
-		header->ack = htonl(tcb->ack);
-		header->checksum = htons(0);
-		header->length_and_type = htons(0x5000);
-		memcpy((char *)header + 20, pData, len);
-		header->checksum = htons(~checksum_compute((unsigned short *)header, 10 + len / 2, (unsigned short *)fake_header));
-		tcp_sendIpPkt((unsigned char*)header, len + 20, srcAddr, dstAddr, 255);
-	}
+	if (flag == PACKET_TYPE_FIN_ACK && tcb->status == ESTABLISHED)
+		tcb->status = FINWAIT1;
 }
-
-
-
-
-
-
 
 
 //(4)的内容
@@ -281,6 +264,8 @@ int stud_tcp_socket(int domain, int type, int protocol)
 	TCB_table.push_back(tcb);
 	return global_socket;
 }
+
+
 
 
 int stud_tcp_connect(int sockfd, struct sockaddr_in *addr, int addrlen)
@@ -300,10 +285,12 @@ int stud_tcp_connect(int sockfd, struct sockaddr_in *addr, int addrlen)
 	int len = waitIpPacket(pBuffer, 255);
 	if (len == -1)
 		return -1;
-	else
-		stud_tcp_input(pBuffer, len, htonl(tcb->dst_addr), htonl(tcb->src_addr));
+	stud_tcp_input(pBuffer, len, htonl(tcb->dst_addr), htonl(tcb->src_addr));
+
 	return 0;
 }
+
+
 
 
 int stud_tcp_send(int sockfd, const unsigned char *pData, unsigned short datalen, int flags)
@@ -313,6 +300,10 @@ int stud_tcp_send(int sockfd, const unsigned char *pData, unsigned short datalen
 	{
 		if (TCB_table[i]->socket == sockfd)
 			tcb = TCB_table[i];
+	}
+	if (tcb->status != ESTABLISHED)
+	{
+		return -1;
 	}
 	stud_tcp_output((char*)pData, datalen, PACKET_TYPE_DATA, tcb->src_port, tcb->dst_port, tcb->src_addr, tcb->dst_addr);
 	char * pBuffer = new char[250];
@@ -325,6 +316,8 @@ int stud_tcp_send(int sockfd, const unsigned char *pData, unsigned short datalen
 }
 
 
+
+
 int stud_tcp_recv(int sockfd, unsigned char *pData, unsigned short datalen, int flags)
 {
 	TCB * tcb = NULL;
@@ -333,6 +326,8 @@ int stud_tcp_recv(int sockfd, unsigned char *pData, unsigned short datalen, int 
 		if (TCB_table[i]->socket == sockfd)
 			tcb = TCB_table[i];
 	}
+	if (tcb->status != ESTABLISHED)
+		return -1;
 	char* pBuffer = new char[250];
 	int len = waitIpPacket(pBuffer, 250);
 	if (len == -1)
@@ -349,34 +344,40 @@ int stud_tcp_recv(int sockfd, unsigned char *pData, unsigned short datalen, int 
 }
 
 
+
+
 int stud_tcp_close(int sockfd)
 {
 	TCB *tcb = NULL;
+	int index = 0;
 	for (int i = 0; i < TCB_table.size(); i++) {
 		if (TCB_table[i]->socket == sockfd)
+		{
 			tcb = TCB_table[i];
+			index = i;
+		}
+	}
+	if (tcb->status == SYNSENT)
+	{
+		TCB_table.erase(TCB_table.begin() + index);
+		return -1;
 	}
 
 
-	// send FIN
 	stud_tcp_output(NULL, 0, PACKET_TYPE_FIN_ACK, tcb->src_port, tcb->dst_port, tcb->src_addr, tcb->dst_addr);
 	tcb->seq++;
 	tcb->ack++;
 
 
-	// wait for ACK
-	char* pBuffer = new char[100];
-	int length = waitIpPacket(pBuffer, 255);
-	if (length == -1) return -1;
-	stud_tcp_input(pBuffer, length, htonl(tcb->dst_addr), htonl(tcb->src_addr));
+	char* pBuffer = new char[250];
+	int len = waitIpPacket(pBuffer, 250);
+	if (len == -1) return -1;
+	stud_tcp_input(pBuffer, len, htonl(tcb->dst_addr), htonl(tcb->src_addr));
 
 
-	// wait for FIN
-	length = waitIpPacket(pBuffer, 255);
-	if (length == -1) return -1;
-
-
-	// send ACK
+	len = waitIpPacket(pBuffer, 255);
+	if (len == -1) return -1;
 	stud_tcp_output(NULL, 0, PACKET_TYPE_ACK, tcb->src_port, tcb->dst_port, tcb->src_addr, tcb->dst_addr);
+
 	return 0;
 }
